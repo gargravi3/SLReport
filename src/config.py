@@ -8,10 +8,15 @@ including data paths, model parameters, and evaluation settings.
 import os
 from pathlib import Path
 
+# Dataset selection via environment variable
+DATASET_NAME = os.getenv('DATASET_NAME', 'hotel').lower()
+
 # Project root directory (assuming config.py is in src/)
 ROOT_DIR = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DATA_DIR = ROOT_DIR / "data"
-OUTPUT_DIR = ROOT_DIR / "outputs"
+
+# Dataset-scoped output directories
+OUTPUT_DIR = ROOT_DIR / "outputs" / DATASET_NAME
 FIGURE_DIR = OUTPUT_DIR / "figures"
 MODEL_DIR = OUTPUT_DIR / "models"
 METRIC_DIR = OUTPUT_DIR / "metrics"
@@ -20,16 +25,23 @@ METRIC_DIR = OUTPUT_DIR / "metrics"
 for directory in [OUTPUT_DIR, FIGURE_DIR, MODEL_DIR, METRIC_DIR]:
     directory.mkdir(parents=True, exist_ok=True)
 
-# Dataset configuration
-DATASET_PATH = ROOT_DIR / "hotel_bookings.csv"
-TARGET_COLUMN = "is_canceled"
-POSITIVE_CLASS = 1
-NEGATIVE_CLASS = 0
+# Dataset-specific configuration
+if DATASET_NAME == 'accidents':
+    DATASET_PATH = ROOT_DIR / "US_Accidents_March23.csv"
+    TARGET_COLUMN = "is_severe"
+    POSITIVE_CLASS = 1
+    NEGATIVE_CLASS = 0
+    LEAKAGE_COLUMNS = []  # Handled in accidents loader
+else:  # hotel (default)
+    DATASET_PATH = ROOT_DIR / "hotel_bookings.csv"
+    TARGET_COLUMN = "is_canceled"
+    POSITIVE_CLASS = 1
+    NEGATIVE_CLASS = 0
+    LEAKAGE_COLUMNS = ["reservation_status", "reservation_status_date"]
+
+# These values are for hotel but won't be used directly in plotting anymore
 POSITIVE_RATE = 0.37  # 37.0% cancellation rate
 PR_AUC_BASELINE = 0.3704  # Baseline PR-AUC (equal to positive rate)
-
-# Columns to drop (leakage control)
-LEAKAGE_COLUMNS = ["reservation_status", "reservation_status_date"]
 
 # Data splitting
 RANDOM_SEED = 42

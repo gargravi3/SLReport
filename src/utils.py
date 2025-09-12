@@ -38,7 +38,7 @@ import random
 
 from src.config import (
     RANDOM_SEED, TARGET_COLUMN, POSITIVE_CLASS, NEGATIVE_CLASS,
-    POSITIVE_RATE, PR_AUC_BASELINE, FIGURE_DIR, THRESHOLD_METRIC
+    THRESHOLD_METRIC
 )
 
 # --------------------------------------------------------------------------- #
@@ -224,8 +224,11 @@ def find_optimal_threshold(y_true: np.ndarray, y_prob: np.ndarray,
     return thresholds[best_idx]
 
 
-def evaluate_classifier(model: BaseEstimator, X: np.ndarray, y_true: np.ndarray, 
-                        threshold: Optional[float] = None) -> Dict[str, float]:
+def evaluate_classifier(model: BaseEstimator,
+                        X: np.ndarray,
+                        y_true: np.ndarray,
+                        threshold: Optional[float] = None,
+                        y_prob: Optional[np.ndarray] = None) -> Dict[str, float]:
     """
     Evaluate a binary classifier and return various metrics.
     
@@ -234,12 +237,14 @@ def evaluate_classifier(model: BaseEstimator, X: np.ndarray, y_true: np.ndarray,
         X: Feature matrix
         y_true: True binary labels
         threshold: Classification threshold (if None, use default 0.5)
+        y_prob: Pre-computed probabilities for the positive class (optional)
         
     Returns:
         Dictionary of evaluation metrics
     """
     # Get predicted probabilities for the positive class
-    y_prob = model.predict_proba(X)[:, 1]
+    if y_prob is None:
+        y_prob = model.predict_proba(X)[:, 1]
     
     # Apply threshold if provided
     if threshold is not None:
@@ -457,12 +462,15 @@ def plot_pr_curve(y_true: np.ndarray, y_prob: np.ndarray,
     precision, recall, _ = precision_recall_curve(y_true, y_prob)
     pr_auc = average_precision_score(y_true, y_prob)
     
+    # Compute baseline dynamically from y_true (prevalence)
+    baseline = float(np.mean(y_true))
+    
     # Plot PR curve
     plt.plot(recall, precision, lw=2, label=f'PR curve (AUC = {pr_auc:.3f})')
     
-    # Plot baseline (no-skill classifier)
-    plt.plot([0, 1], [POSITIVE_RATE, POSITIVE_RATE], 'k--', lw=2, 
-             label=f'Baseline (AUC = {PR_AUC_BASELINE:.3f})')
+    # Plot baseline (no-skill classifier) using the computed prevalence
+    plt.plot([0, 1], [baseline, baseline], 'k--', lw=2, 
+             label=f'Baseline (prevalence = {baseline:.3f})')
     
     # Add labels and title
     plt.xlim([0.0, 1.0])
@@ -509,10 +517,10 @@ def plot_confusion_matrix(y_true: np.ndarray, y_pred: np.ndarray,
     plt.ylabel('True label')
     plt.title(f'Confusion Matrix - {model_name}')
     
-    # Add class labels
+    # Add class labels - using generic labels instead of dataset-specific ones
     tick_marks = np.arange(2)
-    plt.xticks(tick_marks + 0.5, ['Not Canceled', 'Canceled'])
-    plt.yticks(tick_marks + 0.5, ['Not Canceled', 'Canceled'])
+    plt.xticks(tick_marks + 0.5, ['Negative', 'Positive'])
+    plt.yticks(tick_marks + 0.5, ['Negative', 'Positive'])
     
     # Save figure if requested
     if save:
