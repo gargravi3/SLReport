@@ -103,6 +103,16 @@ class ToFloat32(BaseEstimator, TransformerMixin):
         return X.astype(DTYPE_FLOAT, copy=False)
 
 
+class ToObject(BaseEstimator, TransformerMixin):
+    """Cast array to object dtype to avoid sklearn casting pandas Categorical to float."""
+    
+    def fit(self, X, y=None):
+        return self
+    
+    def transform(self, X):
+        return X.astype('object', copy=False)
+
+
 def create_categorical_pipeline(ordinal: bool = False) -> Pipeline:
     """
     Create a preprocessing pipeline for categorical features.
@@ -114,6 +124,9 @@ def create_categorical_pipeline(ordinal: bool = False) -> Pipeline:
         Scikit-learn pipeline for categorical preprocessing
     """
     steps = []
+    
+    # Add ToObject transformer to ensure categorical data is properly handled
+    steps.append(('to_object', ToObject()))
     
     # Add imputation step
     steps.append(
