@@ -53,6 +53,18 @@ from src.models.train_knn import run_knn_pipeline
 from src.models.train_svm import run_svm_pipeline
 from src.models.train_nn import run_nn_pipeline
 
+# Tee class to duplicate stdout/stderr to both console and a file
+class Tee:
+    def __init__(self, *streams):
+        self.streams = streams
+    def write(self, data):
+        for s in self.streams:
+            s.write(data)
+            s.flush()
+    def flush(self):
+        for s in self.streams:
+            s.flush()
+
 
 def stratified_sample_n(X: pd.DataFrame, y: np.ndarray, n: int, seed: int = RANDOM_SEED) -> Tuple[pd.DataFrame, np.ndarray]:
     """
@@ -384,5 +396,23 @@ if __name__ == "__main__":
     # Parse command line arguments
     args = parse_args()
     
+    # Set up logging to file
+    logs_dir = OUTPUT_DIR.parent / 'logs'
+    ensure_dir_exists(logs_dir)
+    
+    # Build log filename with timestamp and calibration flag
+    log_filename = f"run_accidents_{'calibrated' if not args.no_calibration else 'uncalibrated'}_{time.strftime('%Y%m%d_%H%M%S')}.log"
+    log_path = logs_dir / log_filename
+    
+    # Open log file and redirect stdout/stderr
+    log_file = open(log_path, 'w', buffering=1)
+    sys.stdout = Tee(sys.__stdout__, log_file)
+    sys.stderr = Tee(sys.__stderr__, log_file)
+    
+    print(f"Logging to: {log_path}")
+    
     # Run pipeline
     results = run_pipeline(args)
+    
+    # Close log file
+    log_file.close()
