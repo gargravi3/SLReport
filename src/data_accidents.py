@@ -93,6 +93,9 @@ def load_accidents(path: Optional[Union[str, Path]] = None) -> pd.DataFrame:
         dtype=dtype_map
     )
     
+    # Force datetime conversion to handle parsing issues
+    df['Start_Time'] = pd.to_datetime(df['Start_Time'], errors='coerce')
+    
     print(f"Dataset loaded with shape: {df.shape}")
     
     # Create binary severity target
@@ -101,10 +104,10 @@ def load_accidents(path: Optional[Union[str, Path]] = None) -> pd.DataFrame:
     # Drop original Severity column
     df = df.drop(columns=['Severity'])
     
-    # Derive time features from Start_Time
-    df['start_hour'] = df['Start_Time'].dt.hour.astype('int8')
-    df['start_dow'] = df['Start_Time'].dt.dayofweek.astype('int8')
-    df['start_month'] = df['Start_Time'].dt.month.astype('int8')
+    # Derive time features from Start_Time with NaT handling
+    df['start_hour'] = df['Start_Time'].dt.hour.fillna(-1).astype('int8')
+    df['start_dow'] = df['Start_Time'].dt.dayofweek.fillna(-1).astype('int8')
+    df['start_month'] = df['Start_Time'].dt.month.fillna(-1).astype('int8')
     
     # Drop Start_Time after extracting features
     df = df.drop(columns=['Start_Time'])

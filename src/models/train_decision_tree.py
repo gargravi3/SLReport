@@ -212,20 +212,46 @@ def plot_pruning_path(X_train_df: pd.DataFrame, y_train: np.ndarray,
     Returns:
         Matplotlib figure
     """
+    # Import train_test_split locally
+    from sklearn.model_selection import train_test_split
+    
+    # Downsample training and validation data for large datasets
+    if len(X_train_df) > 100000:
+        X_train_df_sampled, _, y_train_sampled, _ = train_test_split(
+            X_train_df, y_train, 
+            train_size=100000, 
+            random_state=RANDOM_SEED, 
+            stratify=y_train
+        )
+        print(f"Downsampled training data for pruning path: {len(X_train_df):,} → {len(X_train_df_sampled):,} rows")
+    else:
+        X_train_df_sampled, y_train_sampled = X_train_df, y_train
+    
+    if len(X_val_df) > 50000:
+        X_val_df_sampled, _, y_val_sampled, _ = train_test_split(
+            X_val_df, y_val, 
+            train_size=50000, 
+            random_state=RANDOM_SEED, 
+            stratify=y_val
+        )
+        print(f"Downsampled validation data for pruning path: {len(X_val_df):,} → {len(X_val_df_sampled):,} rows")
+    else:
+        X_val_df_sampled, y_val_sampled = X_val_df, y_val
+    
     # Create preprocessing pipeline
     preprocessor, _, _ = create_preprocessing_pipeline(
         feature_types, scale_numeric=True
     )
     
     # Preprocess the data
-    X_train = preprocessor.fit_transform(X_train_df).astype(DTYPE_FLOAT)
-    X_val = preprocessor.transform(X_val_df).astype(DTYPE_FLOAT)
+    X_train = preprocessor.fit_transform(X_train_df_sampled).astype(DTYPE_FLOAT)
+    X_val = preprocessor.transform(X_val_df_sampled).astype(DTYPE_FLOAT)
     
     # Create a decision tree classifier
     clf = DecisionTreeClassifier(random_state=RANDOM_SEED, class_weight='balanced')
     
     # Fit the tree
-    path = clf.cost_complexity_pruning_path(X_train, y_train)
+    path = clf.cost_complexity_pruning_path(X_train, y_train_sampled)
     ccp_alphas, impurities = path.ccp_alphas, path.impurities
     
     # Ensure alphas are non-negative and unique (guard against -0.0 / tiny negatives)
@@ -233,32 +259,31 @@ def plot_pruning_path(X_train_df: pd.DataFrame, y_train: np.ndarray,
     ccp_alphas = np.clip(ccp_alphas, 0.0, None)
     ccp_alphas = np.unique(ccp_alphas)
     
+    # Select at most 64 evenly spaced alphas
+    n = len(ccp_alphas)
+    if n > 64:
+        idx = np.linspace(0, n-1, 64, dtype=int)
+        ccp_alphas = ccp_alphas[idx]
+    
+    # Ensure 0 is included at the start
+    if ccp_alphas[0] != 0:
+        ccp_alphas = np.insert(ccp_alphas, 0, 0.0)
+    
+    print(f"Evaluating {len(ccp_alphas)} alpha values for pruning path...")
+    
     # Create trees with different alphas and evaluate them
     clfs = []
     train_scores = []
     val_scores = []
     
-    # Filter out alphas that are too close to each other
-    ccp_alphas = ccp_alphas[::10]  # Take every 10th value to reduce computation
-    
-    # Ensure we have at least 10 points
-    if len(ccp_alphas) < 10:
-        ccp_alphas = path.ccp_alphas[::max(1, len(path.ccp_alphas) // 10)]
-    
-    # Add 0 if not present
-    if ccp_alphas[0] != 0:
-        ccp_alphas = np.insert(ccp_alphas, 0, 0)
-    
-    print(f"Evaluating {len(ccp_alphas)} alpha values for pruning path...")
-    
     for ccp_alpha in ccp_alphas:
         clf = DecisionTreeClassifier(random_state=RANDOM_SEED, ccp_alpha=ccp_alpha, class_weight='balanced')
-        clf.fit(X_train, y_train)
+        clf.fit(X_train, y_train_sampled)
         
         # Record number of nodes and performance
         clfs.append(clf)
-        train_scores.append(clf.score(X_train, y_train))
-        val_scores.append(clf.score(X_val, y_val))
+        train_scores.append(clf.score(X_train, y_train_sampled))
+        val_scores.append(clf.score(X_val, y_val_sampled))
     
     # Get number of nodes for each tree
     node_counts = [clf.tree_.node_count for clf in clfs]
