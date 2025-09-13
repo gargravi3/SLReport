@@ -157,6 +157,12 @@ def parse_args():
         "--cap-svm-rbf-train", type=int, default=100000,
         help="Maximum number of training samples for RBF SVM (default: 100,000)"
     )
+
+    # Neural-network specific
+    parser.add_argument(
+        "--cap-nn-train", type=int, default=200000,
+        help="Maximum number of training samples for Neural Network (default: 200,000)"
+    )
     
     return parser.parse_args()
 
@@ -198,6 +204,7 @@ def run_pipeline(args):
     print(f"  KNN: {args.cap_knn_train:,} samples (train), {args.cap_knn_test:,} samples (test)")
     print(f"  Linear SVM: {args.cap_svm_linear_train:,} samples")
     print(f"  RBF SVM: {args.cap_svm_rbf_train:,} samples")
+    print(f"  Neural Network: {args.cap_nn_train:,} samples")
     print(f"  KNN batch size: {args.knn_test_batch_size:,} samples")
     print("="*80 + "\n")
     
@@ -327,9 +334,18 @@ def run_pipeline(args):
     if "nn" in models_to_run:
         print("\nStep 2.4: Running Neural Network pipeline...")
         start_time = time.time()
+
+        # Apply training cap for Neural Network
+        X_train_nn, y_train_nn = X_train, y_train
+        if len(X_train) > args.cap_nn_train:
+            print(f"Sampling training data for Neural Network: {len(X_train):,} → {args.cap_nn_train:,} samples")
+            X_train_nn, y_train_nn = stratified_sample_n(
+                X_train, y_train, args.cap_nn_train, args.seed
+            )
+            print(f"Sampled training set: {len(X_train_nn):,} samples, positive rate: {y_train_nn.mean():.4f}")
         
         nn_results = run_nn_pipeline(
-            X_train, X_test, y_train, y_test, feature_types,
+            X_train_nn, X_test, y_train_nn, y_test, feature_types,
             calibrate=calibrate, save_results=save_results,
             skip_curves=skip_curves, cv=cv_obj, n_jobs=args.n_jobs
         )

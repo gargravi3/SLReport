@@ -138,7 +138,8 @@ NN_PARAMS = {
     "nesterovs_momentum": False # Added to enforce pure SGD
 }
 NN_PARAM_GRID = {
-    "hidden_layer_sizes": [(512, 512), (256, 256, 128, 128)],
+    # Architectures kept in 0.2M–1.0M param range and with comparable counts
+    "hidden_layer_sizes": [(512, 512), (512, 256, 128, 128)],
     "alpha": [1e-4, 1e-3],
     "learning_rate_init": [0.001, 0.01]
 }
