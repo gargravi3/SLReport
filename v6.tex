@@ -82,17 +82,17 @@ To respect runtime and memory budgets, we used stratified subsampling per model.
 Table~\ref{tab:hotel-metrics} reports test-set metrics and thresholds (calibrated models). DT and KNN provide strong calibrated precision–recall trade-offs; RBF-SVM underperforms and is costly.
 
 \begin{table}[htbp]
-\caption{Test-set metrics on \datasetA{} (calibrated; thresholds from validation).}
+\caption{Test-set metrics on \datasetA{} (calibrated; thresholds chosen to maximize validation F1).}
 \begin{center}
-\begin{tabular}{|l|r|r|r|r|r|r|r|}
+\begin{tabular}{|l|r|r|r|r|r|r|r|r|}
 \hline
-Model & Acc & Prec & Rec & F1 & ROC & PR & Brier \\
+Model & Acc & Prec & Rec & F1 & ROC & PR & $\tau$ & Brier \\
 \hline
-DT (cal) & 0.8660 & 0.8146 & 0.8265 & 0.8205 & 0.9434 & 0.9176 & 0.0927 \\
-kNN (cal) & 0.8402 & 0.8382 & 0.7047 & 0.7657 & 0.9060 & 0.8833 & 0.1121 \\
-LinSVM (cal) & 0.8115 & 0.7413 & 0.7543 & 0.7477 & 0.8882 & 0.8446 & 0.1275 \\
-RBF SVM (cal) & 0.4676 & 0.4020 & 0.8967 & 0.5551 & 0.6152 & 0.4796 & 0.2240 \\
-NN (cal) & 0.7941 & 0.7077 & 0.7565 & 0.7313 & 0.8737 & 0.8397 & 0.1401 \\
+DT (cal) & 0.8660 & 0.8146 & 0.8265 & 0.8205 & 0.9434 & 0.9176 & 0.45 & 0.0927 \\
+kNN (cal) & 0.8402 & 0.8382 & 0.7047 & 0.7657 & 0.9060 & 0.8833 & 0.50 & 0.1121 \\
+LinSVM (cal) & 0.8115 & 0.7413 & 0.7543 & 0.7477 & 0.8882 & 0.8446 & 0.41 & 0.1275 \\
+RBF SVM (cal) & 0.4676 & 0.4020 & 0.8967 & 0.5551 & 0.6152 & 0.4796 & 0.28 & 0.2240 \\
+NN (cal) & 0.7941 & 0.7077 & 0.7565 & 0.7313 & 0.8737 & 0.8397 & 0.50 & 0.1401 \\
 \hline
 \end{tabular}
 \label{tab:hotel-metrics}
@@ -208,6 +208,78 @@ DT structure statistics (final trees): depth=18, nodes=1{,}643, leaves=822. This
 \caption{\datasetA{}: Pruning path/complexity curves (DT).}
 \end{figure}
 
+\begin{figure}[htbp]
+\centering
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/hotel/roc_curve_knn_calibrated.png}
+\end{minipage}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/hotel/pr_curve_knn_calibrated.png}
+\end{minipage}
+\vspace{2pt}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/hotel/calibration_curve_knn_calibrated.png}
+\end{minipage}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/hotel/confusion_matrix_knn_calibrated.png}
+\end{minipage}
+\caption{\datasetA{}: kNN diagnostics — (a) ROC, (b) PR, (c) Reliability, (d) Confusion matrix at chosen threshold.}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/hotel/roc_curve_linear_svm_liblinear_calibrated.png}
+\end{minipage}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/hotel/pr_curve_linear_svm_liblinear_calibrated.png}
+\end{minipage}
+\vspace{2pt}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/hotel/calibration_curve_linear_svm_liblinear_calibrated.png}
+\end{minipage}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/hotel/confusion_matrix_linear_svm_liblinear_calibrated.png}
+\end{minipage}
+\caption{\datasetA{}: Linear SVM (liblinear) diagnostics — (a) ROC, (b) PR, (c) Reliability, (d) Confusion matrix at chosen threshold.}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/hotel/roc_curve_rbf_svm_calibrated.png}
+\end{minipage}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/hotel/pr_curve_rbf_svm_calibrated.png}
+\end{minipage}
+\vspace{2pt}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/hotel/calibration_curve_rbf_svm_calibrated.png}
+\end{minipage}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/hotel/confusion_matrix_rbf_svm_calibrated.png}
+\end{minipage}
+\caption{\datasetA{}: RBF SVM diagnostics — (a) ROC, (b) PR, (c) Reliability, (d) Confusion matrix at chosen threshold.}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/hotel/roc_curve_nn_calibrated.png}
+\end{minipage}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/hotel/pr_curve_nn_calibrated.png}
+\end{minipage}
+\vspace{2pt}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/hotel/calibration_curve_nn_calibrated.png}
+\end{minipage}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/hotel/confusion_matrix_nn_calibrated.png}
+\end{minipage}
+\caption{\datasetA{}: NN diagnostics — (a) ROC, (b) PR, (c) Reliability, (d) Confusion matrix at chosen threshold.}
+\end{figure}
+
 \begin{table}[htbp]
 \caption{Hotel fit vs. predict wall-clock time (seconds).}
 \begin{center}
@@ -229,17 +301,17 @@ DT (cal) & 143.69 & 0.17 \\
 DT dominates in PR-AUC and F1 under the compute budget. Table~\ref{tab:accidents-metrics} reports test-set metrics and thresholds; PR-AUC baseline is 0.1946.
 
 \begin{table}[htbp]
-\caption{Test-set metrics on \datasetB{} (calibrated; thresholds from validation).}
+\caption{Test-set metrics on \datasetB{} (calibrated; thresholds chosen to maximize validation F1).}
 \begin{center}
-\begin{tabular}{|l|r|r|r|r|r|r|r|}
+\begin{tabular}{|l|r|r|r|r|r|r|r|r|}
 \hline
-Model & Acc & Prec & Rec & F1 & ROC & PR & Brier \\
+Model & Acc & Prec & Rec & F1 & ROC & PR & $\tau$ & Brier \\
 \hline
-DT (cal) & 0.8737 & 0.6603 & 0.7230 & 0.6903 & 0.9107 & 0.7508 & 0.0871 \\
-kNN (cal) & 0.7729 & 0.3993 & 0.3309 & 0.3619 & 0.6932 & 0.3473 & 0.1448 \\
-LinSVM (SGD, cal) & 0.6288 & 0.2978 & 0.6681 & 0.4120 & 0.6877 & 0.3236 & 0.1463 \\
-RBF SVM (cal) & 0.3832 & 0.2167 & 0.8296 & 0.3436 & 0.5856 & 0.2432 & 0.1546 \\
-NN (cal) & 0.6859 & 0.3388 & 0.6452 & 0.4443 & 0.7324 & 0.3698 & 0.2125 \\
+DT (cal) & 0.8737 & 0.6603 & 0.7230 & 0.6903 & 0.9107 & 0.7508 & 0.37 & 0.0871 \\
+kNN (cal) & 0.7729 & 0.3993 & 0.3309 & 0.3619 & 0.6932 & 0.3473 & 0.28 & 0.1448 \\
+LinSVM (SGD, cal) & 0.6288 & 0.2978 & 0.6681 & 0.4120 & 0.6877 & 0.3236 & 0.20 & 0.1463 \\
+RBF SVM (cal) & 0.3832 & 0.2167 & 0.8296 & 0.3436 & 0.5856 & 0.2432 & 0.16 & 0.1546 \\
+NN (cal) & 0.6859 & 0.3388 & 0.6452 & 0.4443 & 0.7324 & 0.3698 & 0.55 & 0.2125 \\
 \hline
 \end{tabular}
 \label{tab:accidents-metrics}
@@ -339,6 +411,83 @@ DT structure statistics: depth=18, nodes=10{,}517, leaves=5{,}259, consistent wi
 \maybeincludegraphics[width=\linewidth]{figures/accidents/confusion_matrix_decision_tree_calibrated.png}
 \end{minipage}
 \caption{\datasetB{}: Decision Tree diagnostics — (a) ROC, (b) PR, (c) Reliability, (d) Confusion matrix at chosen threshold.}
+\end{figure}
+
+\begin{figure}[htbp]
+\centerline{\maybeincludegraphics[width=0.95\linewidth]{figures/accidents/feature_importance_decision_tree_calibrated.png}}
+\caption{\datasetB{}: Feature importances (DT).}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/accidents/roc_curve_knn_calibrated.png}
+\end{minipage}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/accidents/pr_curve_knn_calibrated.png}
+\end{minipage}
+\vspace{2pt}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/accidents/calibration_curve_knn_calibrated.png}
+\end{minipage}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/accidents/confusion_matrix_knn_calibrated.png}
+\end{minipage}
+\caption{\datasetB{}: kNN diagnostics — (a) ROC, (b) PR, (c) Reliability, (d) Confusion matrix at chosen threshold.}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/accidents/roc_curve_linear_svm_sgd_calibrated.png}
+\end{minipage}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/accidents/pr_curve_linear_svm_sgd_calibrated.png}
+\end{minipage}
+\vspace{2pt}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/accidents/calibration_curve_linear_svm_sgd_calibrated.png}
+\end{minipage}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/accidents/confusion_matrix_linear_svm_sgd_calibrated.png}
+\end{minipage}
+\caption{\datasetB{}: Linear SVM (SGD) diagnostics — (a) ROC, (b) PR, (c) Reliability, (d) Confusion matrix at chosen threshold.}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/accidents/roc_curve_rbf_svm_calibrated.png}
+\end{minipage}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/accidents/pr_curve_rbf_svm_calibrated.png}
+\end{minipage}
+\vspace{2pt}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/accidents/calibration_curve_rbf_svm_calibrated.png}
+\end{minipage}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/accidents/confusion_matrix_rbf_svm_calibrated.png}
+\end{minipage}
+\caption{\datasetB{}: RBF SVM diagnostics — (a) ROC, (b) PR, (c) Reliability, (d) Confusion matrix at chosen threshold.}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/accidents/roc_curve_nn_calibrated.png}
+\end{minipage}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/accidents/pr_curve_nn_calibrated.png}
+\end{minipage}
+\vspace{2pt}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/accidents/calibration_curve_nn_calibrated.png}
+\end{minipage}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/accidents/confusion_matrix_nn_calibrated.png}
+\end{minipage}
+\caption{\datasetB{}: NN diagnostics — (a) ROC, (b) PR, (c) Reliability, (d) Confusion matrix at chosen threshold.}
 \end{figure}
 
 \begin{table}[htbp]
