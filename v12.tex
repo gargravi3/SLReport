@@ -1,0 +1,402 @@
+% =======================
+% SL REPORT (IEEEtran) — TEMPLATE-MATCHED
+% =======================
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+% Packages match the IEEE template exactly
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+% ---------- Helper Macros (safe; no extra packages) ----------
+\newcommand{\placeholder}[1]{\textcolor{red}{\textbf{[TODO: #1]}}}
+\newcommand{\datasetA}{Hotel Booking Cancellation}
+\newcommand{\datasetB}{US Accidents}
+\newcommand{\course}{CS7641: Machine Learning}
+\newcommand{\reporttitle}{Supervised Learning Report: \datasetA{} and \datasetB{}}
+\newcommand{\authorname}{Ravi Garg}
+\newcommand{\gtuser}{rgarg90}
+\newcommand{\commitsha}{<GIT-COMMIT-SHA>}
+\newcommand{\seed}{42}
+
+% If a figure file is missing, show a framed placeholder so the doc still compiles
+\newcommand{\maybeincludegraphics}[2][]{%
+  \IfFileExists{#2}{\includegraphics[#1]{#2}}{%
+    \fbox{\parbox[c][3cm][c]{0.9\linewidth}{\centering Add figure: \texttt{#2}}}}}
+
+\begin{document}
+
+\title{\reporttitle}
+
+\author{\IEEEauthorblockN{\authorname}
+\IEEEauthorblockA{\textit{School/Dept. (Affiliation)} \\
+\textit{Institution} \\
+City, Country \\
+\texttt{GT User: \gtuser\ \ \  Git Commit: \commitsha}}
+}
+\maketitle
+
+\begin{abstract}
+This report evaluates supervised learning methods across two classification datasets: \datasetA{} and \datasetB{}. We compare decision trees (with pruning), k-nearest neighbors, linear and RBF-kernel SVMs, and a compact multilayer perceptron. We follow an honest split protocol (CV on train, one-time evaluation on test), apply probability calibration, and select operating thresholds via validation. On \datasetB{} (7.73M rows, 19.46\% positives), a calibrated decision tree achieved the best results (F1=0.690, PR-AUC=0.751). We discuss ROC-AUC vs PR-AUC under class imbalance, calibration/thresholding choices, and runtime trade-offs on large tabular data.
+\end{abstract}
+
+\begin{IEEEkeywords}
+classification, calibration, decision trees, kNN, SVM, neural networks, PR-AUC, ROC-AUC, large-scale tabular data
+\end{IEEEkeywords}
+
+\section{Introduction}
+\label{sec:intro}
+Modern tabular classification often faces strong class imbalance and mixed feature types. We develop a unified pipeline for \datasetA{} and \datasetB{} with frequency encoding for high-cardinality categoricals and standardization for numerics, calibrated probabilities with threshold selection on validation data, and consistent CV for model selection. We contrast metrics and wall-clock cost across models, highlighting how calibration and thresholding affect operating points in imbalanced settings. Roadmap: data and problem setup; methods; experiments; cross-model comparison; limitations and conclusions.
+
+\section{Related Work}
+Probability calibration is critical when thresholds matter; we adopt post-hoc calibration and evaluate with PR-AUC in imbalanced settings, where PR curves are more informative than ROC curves \cite{Saito2015PRvsROC}. Modern calibration advances such as Dirichlet calibration improve reliability over temperature scaling and Platt/isotonic baselines across models \cite{Kull2019DirichletCal}.
+Neural networks and many modern classifiers tend to be over-confident; simple post-hoc schemes like temperature scaling learn a single scalar applied to logits to correct confidence but cannot address class-specific biases in the multiclass setting \cite{Kull2019DirichletCal}. Kull et al.\ also distinguish confidence-, classwise-, and full multiclass calibration, recommending reliability diagrams and ECE variants for diagnostics together with proper scoring rules (e.g., Brier score, log-loss) that decompose into calibration and refinement \cite{Kull2019DirichletCal}. They further note pitfalls of one-vs-rest multiclass calibration and show that natively multiclass maps can improve probability reliability across diverse models and datasets \cite{Kull2019DirichletCal}. In our study we follow these principles: we apply post-hoc calibration on validation data for threshold selection, report PR-AUC under class imbalance, and use probability-focused metrics (including Brier score) rather than raw scores alone.
+
+\section{Data and Problem Definition}
+\subsection{\datasetA}
+We use the Hotel Booking Demand dataset \cite{Antonio2019Hotel} (Kaggle mirror). After dropping leakage (\texttt{reservation\_status}, \texttt{reservation\_status\_date}) for cancellation, the dataset has 119{,}390 rows and 30 features. We split 80/20 (seed=\seed), yielding 95{,}512 train and 23{,}878 test. The target \texttt{is\_canceled} has 37.04\% positives (PR-AUC baseline 0.3704). We identified 18 categorical and 11 numeric features; missing values were imputed (median for numerics, most-frequent for categoricals). Categorical variables are frequency-encoded within CV folds; numerics are standardized.
+Row counts: raw 119{,}390 → cleaned 119{,}390 (0.0\% dropped) → split: train 95{,}512 (80.0\%), test 23{,}878 (20.0\%).
+
+\subsection{\datasetB}
+We use the US Accidents dataset (March 2023 snapshot) \cite{MoosaviUSAccidentsKaggle} and predict a binary target \texttt{is\_severe} (Severity $\geq 3$). From 7{,}728{,}394 rows (46 attributes), we drop post-outcome/leaky or ID/text fields (\texttt{End\_Time}, \texttt{End\_Lat}, \texttt{End\_Lng}, \texttt{Weather\_Timestamp}, \texttt{Description}, \texttt{ID}, \texttt{Source}), yielding 41 columns. We split 80/20 (seed=\seed), with 6{,}182{,}715 train and 1{,}545{,}679 test; the positive rate is 19.46\% (PR-AUC baseline 0.1946). We standardize numerics and frequency-encode high-cardinality categoricals inside CV folds. Note: our split is random and stratified; spatiotemporal grouping was not enforced in this version and is a limitation we discuss later.
+Row counts: raw 7{,}728{,}394 → cleaned 7{,}728{,}394 (0.0\% dropped) → split: train 6{,}182{,}715 (80.0\%), test 1{,}545{,}679 (20.0\%).
+
+\subsection{Methodology \& Splits}
+We use a single held-out test set once at the end; hyperparameters are tuned via CV exclusively on the training split (StratifiedShuffleSplit, 3 splits). All seeds are fixed to \seed{}; encoders and scalers are fit within folds to avoid leakage. For classification, we calibrate probabilities and select thresholds by maximizing validation F1. Post-hoc calibration improves probability reliability for threshold selection (cf. \cite{Kull2019DirichletCal}).
+
+\section{Methods}
+Preprocessing is shared: frequency encoding for categoricals and StandardScaler for numerics in a scikit-learn Pipeline, with float32 features throughout. Decision Trees use Gini with regularization (max depth, min samples, ccp\_alpha) and class\_weight=balanced. KNN uses brute-force Euclidean distance with tuned $k$ and weights; we emphasize prediction cost scaling. SVMs include linear (liblinear on Hotel; SGD hinge on Accidents) and RBF kernels, both calibrated post-hoc. NNs are compact MLPs with ReLU activation trained with pure SGD (momentum=0, no Nesterov/Adam), early stopping (patience 3), batch size 1024, and L2 in [1e-4, 1e-3]. We compare shallow–wide (512,512) and deeper–narrower (512,256,128,128) shapes with similar parameter counts ($\sim$0.23–0.28M), keeping epochs $\leq$15.
+
+\section{Experiments}
+\subsection{Setup}
+Hardware: Apple MacBook (Apple M3 Pro), 36 GB RAM; macOS 15.6.1; Python 3.11.13; scikit-learn 1.7.2. Parallelism: \texttt{n\_jobs=-1}. For \datasetB{}, we cap training sizes per guidance: DT 1{,}000{,}000; KNN 250{,}000 train / 25{,}000 test; Linear SVM 1{,}000{,}000; RBF SVM 100{,}000; NN 200{,}000; KNN batch predictions in chunks of 5{,}000.
+
+\subsection{Compute Justification (\datasetB)}
+To respect runtime and memory budgets, we used stratified subsampling per model. RBF SVM at 100k training took 6.7 hours while staying within 9.33 GB RAM, illustrating the nonlinear kernel's poor scaling. Other models ran within tens of minutes (DT: ~37m; Linear SVM: ~35s; NN: ~6m). Learning and complexity curves were produced on the capped sizes.
+
+\section{\datasetA{} (Results)}
+Table~\ref{tab:hotel-metrics} reports test-set metrics and thresholds (calibrated models). DT and KNN provide strong calibrated precision–recall trade-offs; RBF-SVM underperforms and is costly. We report PR-AUC alongside ROC-AUC given class imbalance, following guidance that PR plots are more informative than ROC in such settings \cite{Saito2015PRvsROC}.
+
+\begin{table}[htbp]
+\caption{Test-set metrics on \datasetA{} (calibrated; thresholds chosen to maximize validation F1).}
+\begin{center}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{|l|r|r|r|r|r|r|r|r|}
+\hline
+Model & Acc & Prec & Rec & F1 & ROC & PR & $\tau$ & Brier \\
+\hline
+DT (cal) & 0.8660 & 0.8146 & 0.8265 & 0.8205 & 0.9434 & 0.9176 & 0.45 & 0.0927 \\
+kNN (cal) & 0.8402 & 0.8382 & 0.7047 & 0.7657 & 0.9060 & 0.8833 & 0.50 & 0.1121 \\
+LinSVM (cal) & 0.8115 & 0.7413 & 0.7543 & 0.7477 & 0.8882 & 0.8446 & 0.41 & 0.1275 \\
+RBF SVM (cal) & 0.4676 & 0.4020 & 0.8967 & 0.5551 & 0.6152 & 0.4796 & 0.28 & 0.2240 \\
+\hline
+\end{tabular}%
+}
+\label{tab:hotel-metrics}
+\end{center}
+\end{table}
+
+\begin{table}[htbp]
+\caption{Final hyperparameters (Hotel).}
+\begin{center}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{|l|l|}
+\hline
+Model & Hyperparameters \\
+\hline
+DT (cal) & ccp\_alpha=0.0, max\_depth=18, max\_features=0.5, min\_samples\_leaf=50, min\_samples\_split=100 \\
+ kNN (cal) & n\_neighbors=11, weights=distance \\
+ Linear SVM (cal) & C=10 \\
+ RBF SVM (cal) & C=8, gamma$\approx$0.069 \\
+NN (cal) & hidden\_layer\_sizes=(512,256,128,128), alpha=0.001, learning\_rate\_init=0.01, activation=ReLU \\
+\hline
+\end{tabular}%
+}
+\end{center}
+\end{table}
+
+DT structure statistics (final trees): depth=18, nodes=1{,}643, leaves=822. This indicates a moderately large but regularized tree.
+
+% ===== Required plots (Hotel) =====
+\begin{figure}[htbp]
+\centerline{\maybeincludegraphics[width=0.95\linewidth]{figures/hotel/nn_convergence_nn.png}}
+\caption{\datasetA{}: NN epoch curve with early stopping.}
+\end{figure}
+
+\begin{figure}[htbp]
+\centerline{\maybeincludegraphics[width=0.95\linewidth]{figures/hotel/learning_curve_decision_tree.png}}
+\caption{\datasetA{}: Learning curve (Decision Tree).}
+\end{figure}
+
+\begin{figure}[htbp]
+\centerline{\maybeincludegraphics[width=0.95\linewidth]{figures/hotel/learning_curve_knn.png}}
+\caption{\datasetA{}: Learning curve (kNN).}
+\end{figure}
+
+\begin{figure}[htbp]
+\centerline{\maybeincludegraphics[width=0.95\linewidth]{figures/hotel/learning_curve_linear_svm_liblinear.png}}
+\caption{\datasetA{}: Learning curve (Linear SVM).}
+\end{figure}
+
+\begin{figure}[htbp]
+\centerline{\maybeincludegraphics[width=0.95\linewidth]{figures/hotel/learning_curve_rbf_svm.png}}
+\caption{\datasetA{}: Learning curve (RBF SVM).}
+\end{figure}
+
+\begin{figure}[htbp]
+\centerline{\maybeincludegraphics[width=0.95\linewidth]{figures/hotel/learning_curve_nn.png}}
+\caption{\datasetA{}: Learning curve (NN).}
+\end{figure}
+
+% Model-complexity examples (combined 4-up)
+\begin{figure}[htbp]
+\centering
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/hotel/complexity_curve_clf__max_depth_decision_tree_max_depth.png}
+\end{minipage}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/hotel/complexity_curve_clf__n_neighbors_knn_n_neighbors.png}
+\end{minipage}
+\vspace{2pt}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/hotel/complexity_curve_clf__C_linear_svm_C.png}
+\end{minipage}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/hotel/complexity_curve_clf__alpha_nn_alpha.png}
+\end{minipage}
+\caption{\datasetA{}: Model-complexity sweeps — (a) DT: max depth, (b) kNN: $k$, (c) Linear SVM: $C$, (d) NN: L2 $\alpha$.}
+\end{figure}
+
+% Diagnostics (combined 4-up)
+\begin{figure}[htbp]
+\centering
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/hotel/roc_curve_decision_tree_calibrated.png}
+\end{minipage}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/hotel/pr_curve_decision_tree_calibrated.png}
+\end{minipage}
+\vspace{2pt}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/hotel/calibration_curve_decision_tree_calibrated.png}
+\end{minipage}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/hotel/confusion_matrix_decision_tree_calibrated.png}
+\end{minipage}
+\caption{\datasetA{}: Decision Tree diagnostics — (a) ROC, (b) PR, (c) Reliability, (d) Confusion matrix at chosen threshold.}
+\end{figure}
+
+\emph{Thresholds are selected by maximizing validation F1; threshold-sweep plots are omitted for brevity.}
+
+% DT feature importances
+\begin{figure}[htbp]
+\centerline{\maybeincludegraphics[width=0.95\linewidth]{figures/hotel/feature_importance_decision_tree_calibrated.png}}
+\caption{\datasetA{}: Feature importances (DT).}
+\end{figure}
+
+% DT pruning / complexity path
+\begin{figure}[htbp]
+\centerline{\maybeincludegraphics[width=0.95\linewidth]{figures/hotel/decision_tree_pruning_path.png}}
+\caption{\datasetA{}: Pruning path/complexity curves (DT).}
+\end{figure}
+
+\begin{table}[htbp]
+\caption{Hotel fit vs. predict wall-clock time (seconds).}
+\begin{center}
+\begin{tabular}{|l|r|r|r|}
+\hline
+Model & Fit (s) & Predict (s) & Peak RAM (GB) \\
+\hline
+DT (cal) & 143.69 & 0.17 & 0.82 \\
+ kNN (cal) & 94.23 & 2.95 & 0.82 \\
+ Linear SVM (cal) & 12.29 & 0.03 & 0.82 \\
+ RBF SVM (cal) & 2917.71 & 10.11 & 2.95 \\
+ NN (cal) & 71.50 & 0.07 & 2.95 \\
+\hline
+\end{tabular}
+\end{center}
+\end{table}
+
+\section{\datasetB{} (Results)}
+DT dominates in PR-AUC and F1 under the compute budget. Table~\ref{tab:accidents-metrics} reports test-set metrics and thresholds; PR-AUC baseline is 0.1946.
+
+\begin{table}[htbp]
+\caption{Test-set metrics on \datasetB{} (calibrated; thresholds chosen to maximize validation F1).}
+\begin{center}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{|l|r|r|r|r|r|r|r|r|}
+\hline
+Model & Acc & Prec & Rec & F1 & ROC & PR & $\tau$ & Brier \\
+\hline
+DT (cal) & 0.8737 & 0.6603 & 0.7230 & 0.6903 & 0.9107 & 0.7508 & 0.37 & 0.0871 \\
+kNN (cal) & 0.7729 & 0.3993 & 0.3309 & 0.3619 & 0.6932 & 0.3473 & 0.28 & 0.1448 \\
+LinSVM (SGD, cal) & 0.6288 & 0.2978 & 0.6681 & 0.4120 & 0.6877 & 0.3236 & 0.20 & 0.1463 \\
+RBF SVM (cal) & 0.3832 & 0.2167 & 0.8296 & 0.3436 & 0.5856 & 0.2432 & 0.16 & 0.1546 \\
+NN (cal) & 0.6859 & 0.3388 & 0.6452 & 0.4443 & 0.7324 & 0.3698 & 0.55 & 0.2125 \\
+\hline
+\end{tabular}%
+}
+\label{tab:accidents-metrics}
+\end{center}
+\end{table}
+
+\begin{table}[htbp]
+\caption{Final hyperparameters (Accidents).}
+\begin{center}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{|l|l|}
+\hline
+Model & Hyperparameters \\
+\hline
+DT (cal) & ccp\_alpha=0.0, max\_depth=18, max\_features=0.5, min\_samples\_leaf=50, min\_samples\_split=200 \\
+ kNN (cal) & n\_neighbors=3, weights=distance \\
+ Linear SVM (SGD, cal) & alpha=0.001 \\
+ RBF SVM (cal) & C=8, gamma=scale \\
+NN (cal) & hidden\_layer\_sizes=(512,256,128,128), alpha=0.0001, learning\_rate\_init=0.01, activation=ReLU \\
+\hline
+\end{tabular}%
+}
+\end{center}
+\end{table}
+
+DT structure statistics: depth=18, nodes=10{,}517, leaves=5{,}259, consistent with a high-capacity but regularized tree at 1M training rows. For the RBF SVM, support-vector fractions were ~14.9\% (Hotel) and ~14.8\% (Accidents at 100k), aligning with observed runtime.
+
+% ===== Required plots (Accidents) =====
+\begin{figure}[htbp]
+\centerline{\maybeincludegraphics[width=0.95\linewidth]{figures/accidents/nn_convergence_nn.png}}
+\caption{\datasetB{}: NN epoch curve with early stopping.}
+\end{figure}
+
+\begin{figure}[htbp]
+\centerline{\maybeincludegraphics[width=0.95\linewidth]{figures/accidents/learning_curve_decision_tree.png}}
+\caption{\datasetB{}: Learning curve (Decision Tree).}
+\end{figure}
+
+\begin{figure}[htbp]
+\centerline{\maybeincludegraphics[width=0.95\linewidth]{figures/accidents/learning_curve_linear_svm_sgd.png}}
+\caption{\datasetB{}: Learning curve (Linear SVM/SGD).}
+\end{figure}
+
+\begin{figure}[htbp]
+\centerline{\maybeincludegraphics[width=0.95\linewidth]{figures/accidents/learning_curve_knn.png}}
+\caption{\datasetB{}: Learning curve (kNN).}
+\end{figure}
+
+\begin{figure}[htbp]
+\centerline{\maybeincludegraphics[width=0.95\linewidth]{figures/accidents/learning_curve_rbf_svm.png}}
+\caption{\datasetB{}: Learning curve (RBF SVM).}
+\end{figure}
+
+\begin{figure}[htbp]
+\centerline{\maybeincludegraphics[width=0.95\linewidth]{figures/accidents/learning_curve_nn.png}}
+\caption{\datasetB{}: Learning curve (NN).}
+\end{figure}
+
+% Model-complexity examples
+\begin{figure}[htbp]
+\centering
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/accidents/complexity_curve_clf__max_depth_decision_tree_max_depth.png}
+\end{minipage}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/accidents/complexity_curve_clf__n_neighbors_knn_n_neighbors.png}
+\end{minipage}
+\vspace{2pt}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/accidents/complexity_curve_clf__alpha_linear_svm_sgd_alpha.png}
+\end{minipage}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/accidents/complexity_curve_clf__alpha_nn_alpha.png}
+\end{minipage}
+\caption{\datasetB{}: Model-complexity sweeps — (a) DT: max depth, (b) kNN: $k$, (c) Linear SVM/SGD: $\alpha$, (d) NN: L2 $\alpha$.}
+\end{figure}
+
+\begin{figure}[htbp]
+\centerline{\maybeincludegraphics[width=0.95\linewidth]{figures/accidents/complexity_curve_clf__C_rbf_svm_C.png}}
+\caption{\datasetB{}: Model-complexity (RBF SVM: $C$).}
+\end{figure}
+
+% Diagnostics (DT — combined 4-up)
+\begin{figure}[htbp]
+\centering
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/accidents/roc_curve_decision_tree_calibrated.png}
+\end{minipage}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/accidents/pr_curve_decision_tree_calibrated.png}
+\end{minipage}
+\vspace{2pt}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/accidents/calibration_curve_decision_tree_calibrated.png}
+\end{minipage}
+\begin{minipage}{0.49\linewidth}
+\maybeincludegraphics[width=\linewidth]{figures/accidents/confusion_matrix_decision_tree_calibrated.png}
+\end{minipage}
+\caption{\datasetB{}: Decision Tree diagnostics — (a) ROC, (b) PR, (c) Reliability, (d) Confusion matrix at chosen threshold.}
+\end{figure}
+
+\begin{figure}[htbp]
+\centerline{\maybeincludegraphics[width=0.95\linewidth]{figures/accidents/feature_importance_decision_tree_calibrated.png}}
+\caption{\datasetB{}: Feature importances (DT).}
+\end{figure}
+
+
+\begin{table}[htbp]
+\caption{Accidents fit vs. predict wall-clock time (seconds).}
+\begin{center}
+\begin{tabular}{|l|r|r|r|}
+\hline
+Model & Fit (s) & Predict (s) & Peak RAM (GB) \\
+\hline
+DT (cal) & 2197.74 & 16.11 & 9.33 \\
+kNN (cal) & 709.90 & 9.15 & 9.33 \\
+Linear SVM (SGD, cal) & 32.50 & 2.95 & 9.33 \\
+RBF SVM (cal) & 22981.06 & 1058.65 & 9.33 \\
+NN (cal) & 357.49 & 5.29 & 9.33 \\
+\hline
+\end{tabular}
+\end{center}
+\vspace{2pt}\footnotesize KNN predict time measured on 25k test rows; RBF SVM trained at 100k due to runtime. Peak RAM is the observed maximum resident set size during evaluation.
+\end{table}
+
+\section{Cross-Model Discussion}
+On \datasetB{}, DT achieves the strongest PR-AUC and F1 with tractable training time at 1M rows, reflecting its ability to capture non-linear interactions in frequency-encoded, heterogeneous features under class weighting and pruning. Linear SVM (SGD) scales efficiently and prioritizes recall at the chosen threshold but trails DT in PR-AUC; RBF SVM struggles with runtime at 100k and underperforms. KNN's prediction cost dominates and performance degrades with high-dimensional, mixed-signal features despite scaling and distance weighting. NN training under the 15-epoch cap yields moderate gains but not enough to surpass DT without larger budgets. On \datasetA{}, DT and KNN perform strongly; RBF SVM is unstable and expensive relative to linear SVM and NN.
+
+\section{Type I/II Errors at the Operating Point}
+We select thresholds to maximize validation F1 on calibrated probabilities. For DT, \datasetA{} uses $\tau\!=\!0.45$ and \datasetB{} $\tau\!=\!0.37$, balancing precision and recall. At these points, Type I errors (false positives) reflect over-alerts, while Type II errors (missed positives) reflect under-detection; DT's balanced precision–recall mitigates both relative to alternatives. If the application penalizes misses more than false alarms, the threshold can be shifted right (higher recall, lower precision) using the threshold–metric curve.
+
+\section{Threats to Validity}
+Our Accidents split is random and stratified but not grouped by time/geography, so spatiotemporal leakage remains a risk; future work should adopt time blocks or geographic grouping \cite{Roberts2017BlockedCV}. Hyperparameter grids and compute caps constrain search breadth, especially for RBF SVM and NN. Frequency encoding avoids wide one-hots and is fit within CV folds, but encoding choices can still affect SVM/kNN sensitivity.
+
+\section{Conclusion and Next Step}
+Across both datasets, calibrated DTs provide strong baselines with interpretable splits and efficient inference, especially on large tabular data with class imbalance. A realistic next step is to adopt time-aware validation for \datasetB{} to quantify spatiotemporal generalization and retune thresholds for the resulting distribution shift.
+
+\section*{Reproducibility}
+Repository commit: \commitsha. Seed=\seed{} for all splits and runs. Accidents data: place \texttt{US\_Accidents\_March23.csv} at the repo root. Outputs (models/metrics/figures) are stored under \texttt{outputs/<dataset>/}. Logs are under \texttt{outputs/logs/}.
+
+Commands:
+\begin{itemize}
+\item \textbf{\datasetB{}}: \texttt{python src/run\_accidents.py --models dt,knn,svm,nn --n-jobs -1}
+\item \textbf{\datasetA{}}: \texttt{python src/run\_all.py --models dt,knn,svm,nn --n-jobs -1}
+\end{itemize}
+To control caps (defaults): \texttt{--cap-dt-train 1e6 --cap-knn-train 250000 --cap-knn-test 25000 --cap-svm-linear-train 1e6 --cap-svm-rbf-train 100000 --cap-nn-train 200000}.
+
+\section*{AI Use Statement}
+I used ChatGPT (OpenAI, accessed Sep 2025), Cursor, and Claude Code (Anthropic, accessed Sep 2025) to brainstorm pipeline structure, generate/refactor small code snippets, debug performance issues, and edit grammar/clarity. I reviewed, verified, and understand all assisted content.
+
+\begin{thebibliography}{9}
+\bibitem{Antonio2019Hotel} N. Antonio, A. Almeida, and L. Nunes, ``Hotel booking demand datasets,'' Data in Brief, vol.~22, pp.~41--49, 2019, doi: 10.1016/j.dib.2018.11.126.
+\bibitem{MoosaviUSAccidentsKaggle} S. Moosavi, ``US Accidents (2016--2023),'' Kaggle, 2023. [Online]. Available: https://www.kaggle.com/datasets/sobhanmoosavi/us-accidents. License: CC BY-NC-SA 4.0.
+\bibitem{Saito2015PRvsROC} T. Saito and M. Rehmsmeier, ``The Precision--Recall Plot Is More Informative than the ROC Plot When Evaluating Binary Classifiers on Imbalanced Datasets,'' \textit{PLOS ONE}, vol.~10, no.~3, p.~e0118432, 2015, doi: 10.1371/journal.pone.0118432.
+\bibitem{Kull2019DirichletCal} M. Kull, M. Perello-Nieto, M. K{\"a}ngsepp, T. Silva Filho, H. Song, and P. Flach, ``Beyond Temperature Scaling: Obtaining Well-Calibrated Multiclass Probabilities with Dirichlet Calibration,'' in \textit{Advances in Neural Information Processing Systems 32}, 2019. [Online]. Available: https://papers.neurips.cc/paper/9397-beyond-temperature-scaling-obtaining-well-calibrated-multi-class-probabilities-with-dirichlet-calibration.pdf
+\bibitem{Roberts2017BlockedCV} D. R. Roberts \textit{et al.}, ``Cross-validation strategies for data with temporal, spatial, hierarchical, or phylogenetic structure,'' \textit{Ecography}, vol.~40, no.~8, pp.~913--929, 2017, doi: 10.1111/ecog.02881.
+\end{thebibliography}
+
+\end{document}
