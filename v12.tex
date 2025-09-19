@@ -29,7 +29,7 @@
 % If a figure file is missing, show a framed placeholder so the doc still compiles
 \newcommand{\maybeincludegraphics}[2][]{%
   \IfFileExists{#2}{\includegraphics[#1]{#2}}{%
-    \fbox{\parbox[c][3cm][c]{0.9\linewidth}{\centering Add figure: \texttt{#2}}}}}
+    \fbox{\parbox[c][3cm][c]{0.9\linewidth}{\centering Add figure: \texttt{\detokenize{#2}}}}}}
 
 \begin{document}
 
