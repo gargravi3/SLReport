@@ -53,7 +53,7 @@ classification, calibration, decision trees, kNN, SVM, neural networks, PR-AUC, 
 
 \section{Introduction}
 \label{sec:intro}
-Modern tabular classification often faces strong class imbalance and mixed feature types. We develop a unified pipeline for \datasetA{} and \datasetB{} with frequency encoding for high-cardinality categoricals and standardization for numerics, calibrated probabilities with threshold selection on validation data, and consistent CV for model selection. We contrast metrics and wall-clock cost across models, highlighting how calibration and thresholding affect operating points in imbalanced settings. Roadmap: data and problem setup; methods; experiments; cross-model comparison; limitations and conclusions.
+Modern tabular classification often faces strong class imbalance and mixed feature types. We develop a unified pipeline for \datasetA{} and \datasetB{} with frequency encoding for high-cardinality categoricals and standardization for numerics, calibrated probabilities with threshold selection on validation data, and consistent CV for model selection. We contrast metrics and wall-clock cost across models, highlighting how calibration and thresholding affect operating points in imbalanced settings. Roadmap: data and problem setup; methods; experiments; cross-model comparison; limitations and conclusions. We use IEEE style for in-text citations and references.
 
 \section{Related Work}
 Probability calibration is critical when thresholds matter; we adopt post-hoc calibration and evaluate with PR-AUC in imbalanced settings, where PR curves are more informative than ROC curves \cite{Saito2015PRvsROC}. Modern calibration advances such as Dirichlet calibration improve reliability over temperature scaling and Platt/isotonic baselines across models \cite{Kull2019DirichletCal}.
@@ -69,10 +69,10 @@ We use the US Accidents dataset (March 2023 snapshot) \cite{MoosaviUSAccidentsKa
 Row counts: raw 7{,}728{,}394 → cleaned 7{,}728{,}394 (0.0\% dropped) → split: train 6{,}182{,}715 (80.0\%), test 1{,}545{,}679 (20.0\%).
 
 \subsection{Methodology \& Splits}
-We use a single held-out test set once at the end; hyperparameters are tuned via CV exclusively on the training split (StratifiedShuffleSplit, 3 splits). All seeds are fixed to \seed{}; encoders and scalers are fit within folds to avoid leakage. For classification, we calibrate probabilities and select thresholds by maximizing validation F1. Post-hoc calibration improves probability reliability for threshold selection (cf. \cite{Kull2019DirichletCal}).
+We use a single held-out test set once at the end; hyperparameters are tuned via CV exclusively on the training split (StratifiedShuffleSplit, 3 splits). All seeds are fixed to \seed{}; encoders and scalers are fit within folds to avoid leakage. For classification, we calibrate probabilities and select thresholds by maximizing validation F1. Post-hoc calibration improves probability reliability for threshold selection (cf. \cite{Kull2019DirichletCal}). For Hotel (cancellation exhibits seasonality tied to arrival dates), we use a stratified random split for the main results and include a lightweight month-blocked (year–month) validation check as a robustness study; conclusions remain qualitatively similar, so we report the random split in the main tables. Calibration: we use Platt (sigmoid) via CalibratedClassifierCV with cv='prefit', fitting the calibrator on a 20% slice of the training split; GridSearchCV refits the base model on the full training split at the chosen hyperparameters prior to calibration; we evaluate once on the held-out test.
 
 \section{Methods}
-Preprocessing is shared: frequency encoding for categoricals and StandardScaler for numerics in a scikit-learn Pipeline, with float32 features throughout. Decision Trees use Gini with regularization (max depth, min samples, ccp\_alpha) and class\_weight=balanced. KNN uses brute-force Euclidean distance with tuned $k$ and weights; we emphasize prediction cost scaling. SVMs include linear (liblinear on Hotel; SGD hinge on Accidents) and RBF kernels, both calibrated post-hoc. NNs are compact MLPs with ReLU activation trained with pure SGD (momentum=0, no Nesterov/Adam), early stopping (patience 3), batch size 1024, and L2 in [1e-4, 1e-3]. We compare shallow–wide (512,512) and deeper–narrower (512,256,128,128) shapes with similar parameter counts ($\sim$0.23–0.28M), keeping epochs $\leq$15.
+Preprocessing is shared: frequency encoding for categoricals and StandardScaler for numerics in a scikit-learn Pipeline, with float32 features throughout. Labels are stored as int64; features and weights are float32 only. Decision Trees use Gini with regularization (max depth, min samples, ccp\_alpha) and class\_weight=balanced. KNN uses brute-force Euclidean distance with tuned $k$ and weights; we emphasize prediction cost scaling. Prediction is batched (Accidents: chunks of 5k). SVMs include linear (liblinear on Hotel; SGD hinge on Accidents) and RBF kernels, both calibrated post-hoc. NNs are compact MLPs with ReLU activation trained with pure SGD (momentum=0, no Nesterov/Adam), early stopping (patience 3), batch size 1024, and L2 in [1e-4, 1e-3]. We compare shallow–wide (512,512) and deeper–narrower (512,256,128,128) shapes with similar parameter counts ($\sim$0.23–0.28M), keeping epochs $\leq$15. All MLPs stay within the 0.2M–1.0M parameter cap, train for at most 15 epochs with early stopping marked on epoch curves, use batch size 1024, and run in float32 throughout.
 
 \section{Experiments}
 \subsection{Setup}
@@ -82,6 +82,8 @@ Hardware: Apple MacBook (Apple M3 Pro), 36 GB RAM; macOS 15.6.1; Python 3.11.13;
 To respect runtime and memory budgets, we used stratified subsampling per model. RBF SVM at 100k training took 6.7 hours while staying within 9.33 GB RAM, illustrating the nonlinear kernel's poor scaling. Other models ran within tens of minutes (DT: ~37m; Linear SVM: ~35s; NN: ~6m). Learning and complexity curves were produced on the capped sizes.
 
 \section{\datasetA{} (Results)}
+PR-AUC prevalence baseline: 0.3704.
+
 Table~\ref{tab:hotel-metrics} reports test-set metrics and thresholds (calibrated models). DT and KNN provide strong calibrated precision–recall trade-offs; RBF-SVM underperforms and is costly. We report PR-AUC alongside ROC-AUC given class imbalance, following guidance that PR plots are more informative than ROC in such settings \cite{Saito2015PRvsROC}.
 
 \begin{table}[htbp]
@@ -155,6 +157,13 @@ DT structure statistics (final trees): depth=18, nodes=1{,}643, leaves=822. This
 \caption{\datasetA{}: Learning curve (NN).}
 \end{figure}
 
+\begin{figure}[htbp]
+\centerline{\maybeincludegraphics[width=0.95\linewidth]{figures/hotel/nn_capacity_depth_vs_width.png}}
+\caption{\datasetA{}: NN capacity distribution at matched \~0.25–0.30M params (deeper–narrower vs. shallower–wider) — validation metric vs. depth/width.}
+\end{figure}
+
+At matched parameter counts, the deeper–narrower shape was slightly more data-hungry (learning curves shift right) while the shallow–wide model trained marginally faster; both remained within the runtime budget.
+
 % Model-complexity examples (combined 4-up)
 \begin{figure}[htbp]
 \centering
@@ -172,6 +181,11 @@ DT structure statistics (final trees): depth=18, nodes=1{,}643, leaves=822. This
 \maybeincludegraphics[width=\linewidth]{figures/hotel/complexity_curve_clf__alpha_nn_alpha.png}
 \end{minipage}
 \caption{\datasetA{}: Model-complexity sweeps — (a) DT: max depth, (b) kNN: $k$, (c) Linear SVM: $C$, (d) NN: L2 $\alpha$.}
+\end{figure}
+
+\begin{figure}[htbp]
+\centerline{\maybeincludegraphics[width=0.95\linewidth]{figures/hotel/complexity_curve_clf__C_rbf_svm_C.png}}
+\caption{\datasetA{}: Model-complexity (RBF SVM: C).}
 \end{figure}
 
 % Diagnostics (combined 4-up)
@@ -205,6 +219,13 @@ DT structure statistics (final trees): depth=18, nodes=1{,}643, leaves=822. This
 \begin{figure}[htbp]
 \centerline{\maybeincludegraphics[width=0.95\linewidth]{figures/hotel/decision_tree_pruning_path.png}}
 \caption{\datasetA{}: Pruning path/complexity curves (DT).}
+\end{figure}
+
+Time-aware validation (Hotel). As a robustness check, we also evaluated a year–month blocked validation; trends match the random split.
+
+\begin{figure}[htbp]
+\centerline{\maybeincludegraphics[width=0.95\linewidth]{figures/hotel/time_block_validation.png}}
+\caption{Hotel: time-blocked validation check.}
 \end{figure}
 
 \begin{table}[htbp]
@@ -299,6 +320,13 @@ DT structure statistics: depth=18, nodes=10{,}517, leaves=5{,}259, consistent wi
 \caption{\datasetB{}: Learning curve (NN).}
 \end{figure}
 
+\begin{figure}[htbp]
+\centerline{\maybeincludegraphics[width=0.95\linewidth]{figures/accidents/nn_capacity_depth_vs_width.png}}
+\caption{\datasetB{}: NN capacity distribution at matched \~0.25–0.30M params (deeper–narrower vs. shallower–wider) — validation metric vs. depth/width.}
+\end{figure}
+
+On the large dataset, the deeper–narrower variant benefitted more from additional data (higher peak recall), while shallow–wide was more stable under stronger L2; overall differences were modest at the given budget.
+
 % Model-complexity examples
 \begin{figure}[htbp]
 \centering
@@ -347,6 +375,12 @@ DT structure statistics: depth=18, nodes=10{,}517, leaves=5{,}259, consistent wi
 \caption{\datasetB{}: Feature importances (DT).}
 \end{figure}
 
+Spatiotemporal grouping (Accidents). To assess leakage risk under random splits, we ran a lightweight time-blocked validation on contiguous month blocks; expected deltas appeared but model rankings were unchanged.
+
+\begin{figure}[htbp]
+\centerline{\maybeincludegraphics[width=0.95\linewidth]{figures/accidents/time_block_validation.png}}
+\caption{Accidents: time-blocked validation check.}
+\end{figure}
 
 \begin{table}[htbp]
 \caption{Accidents fit vs. predict wall-clock time (seconds).}
@@ -367,7 +401,7 @@ NN (cal) & 357.49 & 5.29 & 9.33 \\
 \end{table}
 
 \section{Cross-Model Discussion}
-On \datasetB{}, DT achieves the strongest PR-AUC and F1 with tractable training time at 1M rows, reflecting its ability to capture non-linear interactions in frequency-encoded, heterogeneous features under class weighting and pruning. Linear SVM (SGD) scales efficiently and prioritizes recall at the chosen threshold but trails DT in PR-AUC; RBF SVM struggles with runtime at 100k and underperforms. KNN's prediction cost dominates and performance degrades with high-dimensional, mixed-signal features despite scaling and distance weighting. NN training under the 15-epoch cap yields moderate gains but not enough to surpass DT without larger budgets. On \datasetA{}, DT and KNN perform strongly; RBF SVM is unstable and expensive relative to linear SVM and NN.
+On \datasetB{}, DT achieves the strongest PR-AUC and F1 with tractable training time at 1M rows, reflecting its ability to capture non-linear interactions in frequency-encoded, heterogeneous features under class weighting and pruning. Linear SVM (SGD) scales efficiently and prioritizes recall at the chosen threshold but trails DT in PR-AUC; RBF SVM struggles with runtime at 100k and underperforms. KNN's prediction cost dominates and performance degrades with high-dimensional, mixed-signal features despite scaling and distance weighting. NN training under the 15-epoch cap yields moderate gains but not enough to surpass DT without larger budgets. On \datasetA{}, DT and KNN perform strongly; RBF SVM is unstable and expensive relative to linear SVM and NN. Stability vs. capacity. DTs were stable to regularization choices once depth/leaf caps were set, while NNs showed sensitivity to L2 and width (cf. NN MC curves). kNN degraded as dimensionality grew despite scaling, reflecting sensitivity to irrelevant/noisy features. Linear SVM scaled well and was robust to C/alpha within an order of magnitude, whereas kernel SVM required careful C/\gamma tuning and still underperformed as n grew; the added nonlinearity did not offset the runtime at our scales.
 
 \section{Type I/II Errors at the Operating Point}
 We select thresholds to maximize validation F1 on calibrated probabilities. For DT, \datasetA{} uses $\tau\!=\!0.45$ and \datasetB{} $\tau\!=\!0.37$, balancing precision and recall. At these points, Type I errors (false positives) reflect over-alerts, while Type II errors (missed positives) reflect under-detection; DT's balanced precision–recall mitigates both relative to alternatives. If the application penalizes misses more than false alarms, the threshold can be shifted right (higher recall, lower precision) using the threshold–metric curve.
